@@ -89,8 +89,8 @@ class Point2RBoxV2Head(AnchorFreeHead):
                      type='GWDLoss', loss_weight=5.0),
                  loss_overlap: ConfigType = dict(
                      type='GaussianOverlapLoss', loss_weight=10.0),
-                 loss_voronoi: ConfigType = dict(
-                     type='VoronoiWatershedLoss', loss_weight=5.0),
+                 loss_pgdm: ConfigType = dict(
+                     type='PGDMLoss', loss_weight=5.0),
                  loss_bbox_edg: ConfigType = dict(
                      type='EdgeLoss', loss_weight=0.3),
                  loss_ss=dict(
@@ -137,7 +137,7 @@ class Point2RBoxV2Head(AnchorFreeHead):
         self.post_process = post_process
         self.loss_ss = MODELS.build(loss_ss)
         self.loss_overlap = MODELS.build(loss_overlap)
-        self.loss_voronoi = MODELS.build(loss_voronoi)
+        self.loss_pgdm = MODELS.build(loss_pgdm)
         self.loss_bbox_edg = MODELS.build(loss_bbox_edg)
             
     def _init_layers(self):
@@ -374,11 +374,11 @@ class Point2RBoxV2Head(AnchorFreeHead):
                             for cls in item[0]:
                                 pos_thres[cls] = item[1][0]
                                 neg_thres[cls] = item[1][1]
-                    loss_bbox_vor += self.loss_voronoi((mu, sigma.bmm(sigma)),
+                    loss_bbox_vor += self.loss_pgdm((mu, sigma.bmm(sigma)),
                                                        label, self.images[batch_id],
                                                        pos_thres, neg_thres,
                                                        voronoi=self.voronoi_type)
-                    self.vis[batch_id] = self.loss_voronoi.vis
+                    self.vis[batch_id] = self.loss_pgdm.vis
             
             #  Batched RBox for Edge Loss
             loss_bbox_edg = ori_mu_all.new_tensor(0)

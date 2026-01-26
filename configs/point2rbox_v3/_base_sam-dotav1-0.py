@@ -1,4 +1,5 @@
 sam_instance_thr = 4 # 认为这个图可以进入SAM的instance数量的阈值
+sam_batch_size = 4  # SAM 批量推理的 batch size，避免 OOM
 mask_filter_config=dict(
          {
          'default': {

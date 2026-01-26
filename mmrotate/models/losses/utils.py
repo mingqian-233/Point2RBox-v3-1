@@ -204,67 +204,6 @@ def filter_masks(image, masks, scores, class_id, img_np, point, filter_config=No
             'default': {
                 'required_metrics': ['color_consistency', 'center_alignment'],
                 'weights': {'color_consistency': 6, 'center_alignment': 10}
-            },
-            # Tennis Court
-            7: {
-                'required_metrics': ['rectangularity', 'color_consistency', 
-                                    'aspect_ratio_reasonableness', 'center_alignment'],
-                'weights': {'rectangularity': 3, 'color_consistency': 6, 
-                        'aspect_ratio_reasonableness': 10, 'center_alignment': 10},
-                'aspect_ratio_range': (1.3, 3)
-            },
-            # Bridge
-            2: {
-                'required_metrics': ['rectangularity', 'color_consistency', 
-                                    'aspect_ratio_reasonableness', 'center_alignment'],
-                'weights': {'rectangularity': 3, 'color_consistency': 6, 'center_alignment': 10}
-            },
-            # Ground Track Field, Basketball Court, Soccer Ball Field
-            3: {
-                'required_metrics': ['rectangularity', 'circularity', 'color_consistency', 
-                                    'aspect_ratio_reasonableness', 'center_alignment'],
-                'weights': {'rectangularity': 6, 'circularity': -3, 'color_consistency': 6, 
-                        'aspect_ratio_reasonableness': 5, 'center_alignment': 10},
-                'aspect_ratio_range': (1, 3),
-                'penalty_circularity': 100
-            },
-            8: {
-                'required_metrics': ['rectangularity', 'circularity', 'color_consistency', 
-                                    'aspect_ratio_reasonableness', 'center_alignment'],
-                'weights': {'rectangularity': 6, 'circularity': -3, 'color_consistency': 6, 
-                        'aspect_ratio_reasonableness': 5, 'center_alignment': 10},
-                'aspect_ratio_range': (1, 3),
-                'penalty_circularity': 100
-            },
-            10: {
-                'required_metrics': ['rectangularity', 'circularity', 'color_consistency', 
-                                    'aspect_ratio_reasonableness', 'center_alignment'],
-                'weights': {'rectangularity': 6, 'circularity': -3, 'color_consistency': 6, 
-                        'aspect_ratio_reasonableness': 5, 'center_alignment': 10},
-                'aspect_ratio_range': (1, 3),
-                'penalty_circularity': 100
-            },
-            # Baseball Diamond
-            1: {
-                'required_metrics': ['aspect_ratio_reasonableness', 'center_alignment'],
-                'weights': {'aspect_ratio_reasonableness': 5, 'center_alignment': 10},
-                'aspect_ratio_range': (1, 1.3)
-            },
-            # Roundabout
-            11: {
-                'required_metrics': ['circularity', 'rectangularity', 'center_alignment'],
-                'weights': {'circularity': 5, 'rectangularity': -2, 'center_alignment': 10}
-            },
-            # Plane, Helicopter
-            0: {
-                'required_metrics': ['aspect_ratio_reasonableness', 'center_alignment', 'rectangularity'],
-                'weights': {'aspect_ratio_reasonableness': 8, 'center_alignment': 10, 'rectangularity': -1},
-                'aspect_ratio_range': (1.0, 2.0)
-            },
-            14: {
-                'required_metrics': ['aspect_ratio_reasonableness', 'center_alignment', 'rectangularity'],
-                'weights': {'aspect_ratio_reasonableness': 8, 'center_alignment': 10, 'rectangularity': -1},
-                'aspect_ratio_range': (1.0, 2.0)
             }
         }
     

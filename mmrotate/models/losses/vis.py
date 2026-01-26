@@ -1,6 +1,26 @@
+# Global variable to store current image ID for organized output
+_current_img_id = None
+
+def set_img_id(img_path):
+    """Set current image ID from path for organized debug output."""
+    global _current_img_id
+    import os.path as osp
+    _current_img_id = osp.splitext(osp.basename(img_path))[0]
+
+def get_debug_dir():
+    """Get debug output directory for current image."""
+    import os
+    if _current_img_id:
+        debug_dir = f'debug/{_current_img_id}'
+        os.makedirs(debug_dir, exist_ok=True)
+        return debug_dir
+    else:
+        os.makedirs('debug', exist_ok=True)
+        return 'debug'
+
 def plot_gaussian_voronoi_watershed(original_image, cls_bg, markers,
                                     labels=None, class_names=None,
-                                    output_path=None): 
+                                    output_path=None):
     """Plot figures for debug..."""
     """Plot figures for debug with 2x3 layout showing different processing stages.
     
@@ -217,9 +237,9 @@ def plot_gaussian_voronoi_watershed(original_image, cls_bg, markers,
         img.save(output_path, format='PNG', optimize=True, compress_level=9)
         buf.close()
     else:
-        os.makedirs('debug', exist_ok=True)
+        debug_dir = get_debug_dir()
         timestamp = time.strftime("%Y%m%d-%H%M%S")
-        output_path_default = f'debug/{timestamp}-Gaussian-Voronoi-2x3.png'
+        output_path_default = f'{debug_dir}/{timestamp}-Gaussian-Voronoi-2x3.png'
         plt.savefig(output_path_default, bbox_inches='tight', facecolor='white')
         
     plt.close()
@@ -233,17 +253,24 @@ def visualize_loss_calculation(image, mask_tensor, mu_j, V_j, xy_centered, xy_ro
     import time
     from matplotlib.colors import LinearSegmentedColormap
     
-    os.makedirs('vis_loss', exist_ok=True)
-    
     fig, axes = plt.subplots(2, 3, figsize=(18, 11), dpi=150)
     
     class_names = {
-        0: 'ship',
-        1: 'aircraft',
-        2: 'car',
-        3: 'tank',
-        4: 'bridge',
-        5: 'harbor'
+        0: 'plane',
+        1: 'baseball-diamond',
+        2: 'bridge',
+        3: 'ground-track-field',
+        4: 'small-vehicle',
+        5: 'large-vehicle',
+        6: 'ship',
+        7: 'tennis-court',
+        8: 'basketball-court',
+        9: 'storage-tank',
+        10: 'soccer-ball-field',
+        11: 'roundabout',
+        12: 'harbor',
+        13: 'swimming-pool',
+        14: 'helicopter'
     }
     class_name = class_names.get(class_id, f'Class {class_id}')
     
@@ -391,8 +418,9 @@ def visualize_loss_calculation(image, mask_tensor, mu_j, V_j, xy_centered, xy_ro
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    debug_dir = get_debug_dir()
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    plt.savefig(f'vis_loss/loss_calc_{timestamp}_{class_name}_inst{j+1}.png',  
+    plt.savefig(f'{debug_dir}/loss_calc_{timestamp}_{class_name}_inst{j+1}.png',
                 bbox_inches='tight', facecolor='white')
     plt.close()
 
@@ -416,9 +444,6 @@ def save_debug_visualization(image, masks, scores, shape_metrics, metrics_values
     import time
     import numpy as np
     
-    # Create save directory
-    os.makedirs('vis', exist_ok=True)
-    
     # Create figure
     n_masks = len(masks)
     n_cols = min(3, n_masks)  # Maximum 3 subplots per row
@@ -432,12 +457,21 @@ def save_debug_visualization(image, masks, scores, shape_metrics, metrics_values
     
     # Get class names
     class_names = {
-        0: 'ship',
-        1: 'aircraft',
-        2: 'car',
-        3: 'tank',
-        4: 'bridge',
-        5: 'harbor'
+        0: 'plane',
+        1: 'baseball-diamond',
+        2: 'bridge',
+        3: 'ground-track-field',
+        4: 'small-vehicle',
+        5: 'large-vehicle',
+        6: 'ship',
+        7: 'tennis-court',
+        8: 'basketball-court',
+        9: 'storage-tank',
+        10: 'soccer-ball-field',
+        11: 'roundabout',
+        12: 'harbor',
+        13: 'swimming-pool',
+        14: 'helicopter'
     }
     class_name = class_names.get(class_id, f'Class {class_id}')
     
@@ -490,9 +524,10 @@ def save_debug_visualization(image, masks, scores, shape_metrics, metrics_values
         axes[i].axis('off')
     
     plt.tight_layout(rect=[0, 0.25, 1, 0.95])
-    
+
     # Save image
+    debug_dir = get_debug_dir()
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    output_path = f'vis/{timestamp}-{class_name}-masks.png'
+    output_path = f'{debug_dir}/{timestamp}-{class_name}-masks.png'
     plt.savefig(output_path, bbox_inches='tight', facecolor='white')
     plt.close()

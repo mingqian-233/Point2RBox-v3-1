@@ -19,6 +19,7 @@ from torch import Tensor
 from mmrotate.registry import MODELS, TASK_UTILS
 from mmrotate.structures import RotatedBoxes, rbox2qbox, hbox2rbox, rbox2hbox
 from mmrotate.models.losses.gaussian_dist_loss import xy_wh_r_2_xy_sigma, gwd_loss
+from mmrotate.models.losses.vis import set_img_id
 
 INF = 1e8
 
@@ -89,8 +90,8 @@ class Point2RBoxV3Head(AnchorFreeHead):
                      type='GWDLoss', loss_weight=5.0),
                  loss_overlap: ConfigType = dict(
                      type='GaussianOverlapLoss', loss_weight=10.0),
-                 loss_voronoi: ConfigType = dict(
-                     type='VoronoiWatershedLoss', loss_weight=5.0),
+                 loss_pgdm: ConfigType = dict(
+                     type='PGDMLoss', loss_weight=5.0),
                  loss_bbox_edg: ConfigType = dict(
                      type='EdgeLoss', loss_weight=0.3),
                  loss_ss=dict(
@@ -139,7 +140,7 @@ class Point2RBoxV3Head(AnchorFreeHead):
         self.post_process = post_process
         self.loss_ss = MODELS.build(loss_ss)
         self.loss_overlap = MODELS.build(loss_overlap)
-        self.loss_voronoi = MODELS.build(loss_voronoi)
+        self.loss_pgdm = MODELS.build(loss_pgdm)
         self.loss_bbox_edg = MODELS.build(loss_bbox_edg)
         if self.use_adaptive_scale:
             self.adaptive_scale = nn.Parameter(torch.ones(num_classes, num_classes))
@@ -381,6 +382,11 @@ class Point2RBoxV3Head(AnchorFreeHead):
                     else:
                         loss_bbox_ovl += self.loss_overlap((mu, sigma.bmm(sigma)))
                 if len(mu) >= 1:
+                    # Set img_id for organized visualization output
+                    if  batch_id < len(batch_img_metas):
+                        img_path = batch_img_metas[batch_id].get('img_path', f'batch{batch_id}')
+                        set_img_id(img_path)
+
                     pos_thres = [self.voronoi_thres['default'][0]] * self.num_classes
                     neg_thres = [self.voronoi_thres['default'][1]] * self.num_classes
                     if 'override' in self.voronoi_thres.keys():
@@ -388,7 +394,7 @@ class Point2RBoxV3Head(AnchorFreeHead):
                             for cls in item[0]:
                                 pos_thres[cls] = item[1][0]
                                 neg_thres[cls] = item[1][1]
-                    if self.loss_voronoi.use_class_specific_watershed:
+                    if self.loss_pgdm.use_class_specific_watershed:
                         cur_loss_bbox_vor = ori_mu_all.new_tensor(0)
                         for cur_class_id in range(self.num_classes):
                             cur_class_mask = label == cur_class_id
@@ -397,17 +403,17 @@ class Point2RBoxV3Head(AnchorFreeHead):
                             cur_mu = mu[cur_class_mask]
                             cur_sigma = sigma[cur_class_mask]
                             cur_label = label[cur_class_mask]
-                            cur_loss_bbox_vor += self.loss_voronoi((cur_mu, cur_sigma.bmm(cur_sigma)),
+                            cur_loss_bbox_vor += self.loss_pgdm((cur_mu, cur_sigma.bmm(cur_sigma)),
                                                         cur_label, self.images_no_copypaste[batch_id],  # whether to conduct ablation experiments?
                                                         pos_thres, neg_thres,
                                                         voronoi=self.voronoi_type) * len(cur_mu)
                         loss_bbox_vor += cur_loss_bbox_vor / len(mu)
                     else:
-                        loss_bbox_vor += self.loss_voronoi((mu, sigma.bmm(sigma)),
+                        loss_bbox_vor += self.loss_pgdm((mu, sigma.bmm(sigma)),
                                                        label, self.images_no_copypaste[batch_id],  # whether to conduct ablation experiments?
                                                        pos_thres, neg_thres,
                                                        voronoi=self.voronoi_type)
-                    self.vis[batch_id] = self.loss_voronoi.vis
+                    self.vis[batch_id] = self.loss_pgdm.vis
             
             #  Batched RBox for Edge Loss
             loss_bbox_edg = ori_mu_all.new_tensor(0)

@@ -79,8 +79,8 @@ model = dict(
         loss_bbox=dict(type='GDLoss', loss_type='gwd', loss_weight=5.0),
         loss_overlap=dict(
             type='GaussianOverlapLoss', loss_weight=10.0, lamb=0),
-        loss_voronoi=dict(
-            type='VoronoiWatershedLoss',
+        loss_pgdm=dict(
+            type='PGDMLoss',
             loss_weight=5.0,
             mask_filter_config=_base_.mask_filter_config,
             sam_instance_thr=_base_.sam_instance_thr,

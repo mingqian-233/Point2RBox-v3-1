@@ -65,8 +65,8 @@ model = dict(
         loss_bbox=dict(type='GDLoss', loss_type='gwd', loss_weight=5.0),
         loss_overlap=dict(
             type='GaussianOverlapLoss', loss_weight=10.0, lamb=0),
-        loss_voronoi=dict(
-            type='VoronoiWatershedLoss', loss_weight=5.0),
+        loss_pgdm=dict(
+            type='PGDMLoss', loss_weight=5.0),
         loss_bbox_edg=dict(
             type='EdgeLoss', loss_weight=0.3),
         loss_ss=dict(
