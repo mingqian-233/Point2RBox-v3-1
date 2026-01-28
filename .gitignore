@@ -1,3 +1,14 @@
+# 脚本、缓存以及调试
+train_launcher.py
+train.sh
+mobile_sam.pt
+CLAUDE.md
+http_proxy
+.vscode
+.claude
+debug
+.gitignore
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
