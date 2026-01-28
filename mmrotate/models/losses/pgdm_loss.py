@@ -106,7 +106,8 @@ def _get_box_prompt_from_gaussian(mu_j, sigma_j, sigma_scale=1, ellipse_scale_fa
 
 
 def segment_anything(image, mu, sigma, device=None, sam_checkpoint=None, model_type=None,
-                     label=None, debug=False, mask_filter_config=None, sam_batch_size=8, sam_sample_rules=None):
+                     label=None, debug=False, mask_filter_config=None, sam_batch_size=8,
+                     sam_enable_predictor_cache=False, sam_no_batch_inference=True, sam_sample_rules=None):
     """SAM-based mask generation branch with batch loss computation.
 
     Args:
@@ -162,7 +163,7 @@ def segment_anything(image, mu, sigma, device=None, sam_checkpoint=None, model_t
         if sam_checkpoint is None:
             raise ValueError("未找到MobileSAM检查点，请指定sam_checkpoint参数")
 
-    # 初始化/缓存 sam 和 predictor（单例模式，支持 checkpoint/model_type/device 切换）
+    # 初始化/缓存 sam（model永远缓存）和 predictor（可选缓存）
     if (not hasattr(segment_anything, "sam_model")
         or not hasattr(segment_anything, "model_type")
         or not hasattr(segment_anything, "sam_checkpoint")
@@ -175,11 +176,19 @@ def segment_anything(image, mu, sigma, device=None, sam_checkpoint=None, model_t
         segment_anything.model_type = model_type
         segment_anything.sam_checkpoint = sam_checkpoint
         segment_anything.device = str(device)
-        segment_anything.predictor = SamPredictor(sam)  # 同时缓存 predictor
+
+        # 可选：缓存predictor
+        if sam_enable_predictor_cache:
+            segment_anything.predictor = SamPredictor(sam)
     else:
         sam = segment_anything.sam_model
 
-    predictor = segment_anything.predictor
+    # 根据配置决定是否复用缓存的predictor
+    if sam_enable_predictor_cache and hasattr(segment_anything, "predictor"):
+        predictor = segment_anything.predictor
+    else:
+        predictor = SamPredictor(sam)  # 每次创建新实例（原始行为）
+
     # 步骤1: set_image 一次，缓存 image embedding（每张图都必须调用）
     predictor.set_image(img_np)
 
@@ -188,6 +197,121 @@ def segment_anything(image, mu, sigma, device=None, sam_checkpoint=None, model_t
 
     L, V = torch.linalg.eigh(sigma)
 
+    # ========== 单个推理模式（官方原始实现）==========
+    if sam_no_batch_inference:
+        total_loss = 0.0
+        valid_instances = 0
+
+        for j, point in enumerate(points):
+            if debug:
+                print(f"Processing point {j+1}/{J} at {point}")
+
+            box_prompt = None
+
+            all_points = []
+            all_labels = []
+
+            all_points.append(point)
+            all_labels.append(1)
+
+            for k in range(J):
+                if k != j:
+                    if sam_sample_rules is not None:
+                        skip = False
+                        j_label = label[j].item()
+                        k_label = label[k].item()
+                        dist = np.sqrt(((points[j] - points[k]) ** 2).sum())
+                        for filter_pair in sam_sample_rules["filter_pairs"]:
+                            class_id1, class_id2, dist_thr = filter_pair
+                            if ((j_label == class_id1 and k_label == class_id2) or
+                                (j_label == class_id2 and k_label == class_id1)) \
+                                and dist < dist_thr:
+                                skip = True
+                                break
+                        if skip:
+                            continue
+
+                    all_points.append(points[k])
+                    all_labels.append(0)
+
+            point_coords = np.array(all_points)
+            point_labels = np.array(all_labels)
+
+            masks, scores, _ = predictor.predict(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                box=box_prompt,
+                multimask_output=True
+            )
+
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            masks_processed = []
+
+            for mask in masks:
+                mask_opened = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, kernel)
+
+                num_labels, labels_conn, stats, centroids = cv2.connectedComponentsWithStats(mask_opened)
+
+                if num_labels > 1:
+                    largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+
+                    largest_mask = (labels_conn == largest_label)
+                    masks_processed.append(largest_mask)
+                else:
+                    masks_processed.append(mask_opened > 0)
+
+            masks = masks_processed
+
+            best_mask_idx = np.argmax(scores)
+
+            class_id = label[j].item()
+
+            best_mask_idx, metrics_values, shape_metrics = filter_masks(
+                image, masks, scores, class_id, img_np, point, mask_filter_config, debug
+            )
+            if debug:
+                save_debug_visualization(image, masks, scores, shape_metrics, metrics_values,
+                                        best_mask_idx, class_id, "Optimized Mask Selection")
+
+            mask = masks[best_mask_idx]
+
+            mask_tensor = torch.from_numpy(mask).to(mu.device)
+
+            markers[mask_tensor] = j + 1
+
+            xy = mask_tensor.nonzero()[:, (1, 0)].float()
+
+            if len(xy) > 0:
+                xy_centered = xy - mu[j]
+
+                xy_rotated = V[j].T.matmul(xy_centered[:, :, None])[:, :, 0]
+
+                max_x = torch.max(torch.abs(xy_rotated[:, 0]))
+                max_y = torch.max(torch.abs(xy_rotated[:, 1]))
+
+                L_target = torch.stack((max_x, max_y)) ** 2
+
+                L_diag = torch.diag_embed(L[j])
+                L_target_diag = torch.diag_embed(L_target)
+
+                instance_loss = gwd_sigma_loss(L_diag.unsqueeze(0), L_target_diag.unsqueeze(0).detach(), reduction='mean')
+
+                if debug:
+                    visualize_loss_calculation(
+                        image, mask_tensor, mu[j], V[j],
+                        xy_centered, xy_rotated, max_x, max_y,
+                        L[j], L_target, instance_loss,
+                        j, class_id
+                    )
+
+                total_loss += instance_loss
+                valid_instances += 1
+
+        final_loss = total_loss / max(1, valid_instances)
+
+        return final_loss, markers
+
+    # ========== 批量推理模式（实验性，已知精度下降问题）==========
     # 步骤2: 准备所有实例的负样本信息
     all_negative_indices = []  # 每个实例的负样本索引列表
     for j in range(J):
@@ -496,7 +620,9 @@ def get_loss_from_mask(mu, sigma, label, image, pos_thres, neg_thres, down_sampl
                       topk=0.95, default_sigma=4096, voronoi='gaussian-orientation',
                       alpha=0.1, debug=False, mask_filter_config=None,
                       sam_checkpoint='./mobile_sam.pt', model_type='vit_t',
-                      sam_instance_thr=-1, sam_batch_size=8, device=None, sam_sample_rules=None):
+                      sam_instance_thr=-1, sam_batch_size=8,
+                      sam_enable_predictor_cache=False, sam_no_batch_inference=True,
+                      device=None, sam_sample_rules=None):
     """Main entry point for mask-based loss calculation.
 
     Switches between SAM and Voronoi+Watershed based on instance count.
@@ -541,6 +667,8 @@ def get_loss_from_mask(mu, sigma, label, image, pos_thres, neg_thres, down_sampl
             debug=debug,
             mask_filter_config=mask_filter_config,
             sam_batch_size=sam_batch_size,
+            sam_enable_predictor_cache=sam_enable_predictor_cache,
+            sam_no_batch_inference=sam_no_batch_inference,
             sam_sample_rules=sam_sample_rules,
         )
         vor = markers.clone()
@@ -572,6 +700,8 @@ class PGDMLoss(nn.Module):
         mask_filter_config (dict): Mask filtering configuration. Defaults to None.
         sam_instance_thr (int): Instance count threshold to switch to SAM. Defaults to -1 (disabled).
         sam_batch_size (int): Batch size for SAM inference. Defaults to 8.
+        sam_enable_predictor_cache (bool): Enable predictor caching. Defaults to False.
+        sam_no_batch_inference (bool): Disable batch inference, use original single-instance inference. Defaults to True.
         sam_sample_rules (dict): Negative sample filtering rules. Defaults to None.
         use_class_specific_watershed (bool): Use class-specific watershed. Defaults to False.
     """
@@ -586,6 +716,8 @@ class PGDMLoss(nn.Module):
                  mask_filter_config=None,
                  sam_instance_thr=-1,
                  sam_batch_size=8,
+                 sam_enable_predictor_cache=False,
+                 sam_no_batch_inference=True,
                  sam_sample_rules=None,
                  use_class_specific_watershed=False
                  ):
@@ -599,6 +731,8 @@ class PGDMLoss(nn.Module):
         self.mask_filter_config = mask_filter_config
         self.sam_instance_thr = sam_instance_thr
         self.sam_batch_size = sam_batch_size
+        self.sam_enable_predictor_cache = sam_enable_predictor_cache
+        self.sam_no_batch_inference = sam_no_batch_inference
         self.sam_sample_rules = sam_sample_rules
         self.use_class_specific_watershed = use_class_specific_watershed
         self.vis = None
@@ -633,6 +767,8 @@ class PGDMLoss(nn.Module):
         mask_filter_config=self.mask_filter_config,
         sam_instance_thr=self.sam_instance_thr,
         sam_batch_size=self.sam_batch_size,
+        sam_enable_predictor_cache=self.sam_enable_predictor_cache,
+        sam_no_batch_inference=self.sam_no_batch_inference,
         sam_sample_rules=self.sam_sample_rules)
         return self.loss_weight * loss
 
