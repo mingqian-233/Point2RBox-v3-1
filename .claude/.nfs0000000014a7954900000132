@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(python test_refactor.py:*)",
+      "Bash(python -c:*)",
+      "Bash(done)"
+    ]
+  },
+  "outputStyle": "default"
+}
