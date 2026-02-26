@@ -1,5 +1,5 @@
 #!/bin/bash
-# Point2RBox-v3 快速训练脚本
+# Point2RBox-v3 快速测试脚本
 
 set -e
 # 确保在仓库根目录运行（以脚本所在目录为准）
@@ -17,7 +17,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}======================================================================${NC}"
-echo -e "${BLUE}                  Point2RBox-v3 训练启动器${NC}"
+echo -e "${BLUE}                  Point2RBox-v3 测试启动器${NC}"
 echo -e "${BLUE}======================================================================${NC}"
 
 # ============= 激活 Conda 环境 =============
@@ -70,16 +70,16 @@ GPU_ID=${GPU_ID:-$BEST_GPU}
 echo ""
 echo -e "${GREEN}可用配置文件:${NC}"
 echo "======================================================================"
-echo "  1. DOTA v1.0 训练 (默认)"
+echo "  1. DOTA v1.0 测试 (默认)"
 echo "     configs/point2rbox_v3/point2rbox_v3-1x-dotav1-0.py"
 echo ""
-echo "  2. DOTA v1.5 训练"
+echo "  2. DOTA v1.5 测试"
 echo "     configs/point2rbox_v3/point2rbox_v3-1x-dotav1-5.py"
 echo ""
-echo "  3. DIOR 训练"
+echo "  3. DIOR 测试"
 echo "     configs/point2rbox_v3/point2rbox_v3-1x-dior.py"
 echo ""
-echo "  4. STAR 训练"
+echo "  4. STAR 测试"
 echo "     configs/point2rbox_v3/point2rbox_v3-1x-star.py"
 echo ""
 echo "  5. 自定义配置路径"
@@ -91,59 +91,101 @@ CONFIG_CHOICE=${CONFIG_CHOICE:-1}
 case $CONFIG_CHOICE in
     1)
         CONFIG="configs/point2rbox_v3/point2rbox_v3-1x-dotav1-0.py"
+        DEFAULT_WORK_DIR="work_dirs/point2rbox_v3-1x-dotav1-0"
         ;;
     2)
         CONFIG="configs/point2rbox_v3/point2rbox_v3-1x-dotav1-5.py"
+        DEFAULT_WORK_DIR="work_dirs/point2rbox_v3-1x-dotav1-5"
         ;;
     3)
         CONFIG="configs/point2rbox_v3/point2rbox_v3-1x-dior.py"
+        DEFAULT_WORK_DIR="work_dirs/point2rbox_v3-1x-dior"
         ;;
     4)
         CONFIG="configs/point2rbox_v3/point2rbox_v3-1x-star.py"
+        DEFAULT_WORK_DIR="work_dirs/point2rbox_v3-1x-star"
         ;;
     5)
         read -p "输入配置文件路径: " CONFIG
+        DEFAULT_WORK_DIR=""
         ;;
     *)
         CONFIG="configs/point2rbox_v3/point2rbox_v3-1x-dotav1-0.py"
+        DEFAULT_WORK_DIR="work_dirs/point2rbox_v3-1x-dotav1-0"
         echo -e "${YELLOW}输入无效，使用默认配置${NC}"
         ;;
 esac
 
-# ============= 训练参数 =============
+# ============= Checkpoint选择 =============
 echo ""
-echo -e "${GREEN}训练参数设置 (直接回车使用默认值):${NC}"
+echo -e "${GREEN}Checkpoint选择:${NC}"
+echo "======================================================================"
+
+# 尝试列出工作目录中的checkpoint文件
+if [ ! -z "$DEFAULT_WORK_DIR" ] && [ -d "$DEFAULT_WORK_DIR" ]; then
+    echo -e "${YELLOW}在 $DEFAULT_WORK_DIR 中找到的checkpoint:${NC}"
+    CKPTS=($(find "$DEFAULT_WORK_DIR" -name "*.pth" -type f 2>/dev/null | sort))
+    if [ ${#CKPTS[@]} -gt 0 ]; then
+        for i in "${!CKPTS[@]}"; do
+            echo "  $((i+1)). ${CKPTS[$i]}"
+        done
+        echo ""
+        read -p "选择checkpoint序号或输入完整路径: " CKPT_CHOICE
+
+        # 判断输入是数字还是路径
+        if [[ "$CKPT_CHOICE" =~ ^[0-9]+$ ]] && [ "$CKPT_CHOICE" -ge 1 ] && [ "$CKPT_CHOICE" -le ${#CKPTS[@]} ]; then
+            CHECKPOINT="${CKPTS[$((CKPT_CHOICE-1))]}"
+        else
+            CHECKPOINT="$CKPT_CHOICE"
+        fi
+    else
+        echo -e "${YELLOW}未找到checkpoint文件${NC}"
+        read -p "输入checkpoint文件路径: " CHECKPOINT
+    fi
+else
+    read -p "输入checkpoint文件路径: " CHECKPOINT
+fi
+
+# 验证checkpoint文件存在
+if [ ! -f "$CHECKPOINT" ]; then
+    echo -e "${RED}错误: Checkpoint文件不存在: $CHECKPOINT${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ 选择的checkpoint: $CHECKPOINT${NC}"
+
+# ============= 测试参数 =============
+echo ""
+echo -e "${GREEN}测试参数设置 (直接回车使用默认值):${NC}"
 echo "======================================================================"
 
 # Work directory
 read -p "工作目录 (默认: 自动生成): " WORK_DIR
 
-# AMP
-read -p "启用混合精度训练 AMP? (y/n, 默认: n): " USE_AMP
-USE_AMP=${USE_AMP:-n}
+# Show directory
+read -p "保存可视化结果目录 (直接回车跳过): " SHOW_DIR
 
-# Resume
-read -p "从最新checkpoint恢复训练? (y/n, 默认: n): " RESUME
-RESUME=${RESUME:-n}
+# Output pickle file
+read -p "保存预测结果到pickle文件 (直接回车跳过): " OUT_FILE
 
 # Config options
 echo ""
-echo "配置覆盖 (例如: model.copy_paste_start_epoch=8 optim_wrapper.optimizer.lr=0.0001)"
+echo "配置覆盖 (例如: model.test_cfg.nms.iou_threshold=0.1)"
 read -p "cfg-options (直接回车跳过): " CFG_OPTIONS
 
 # ============= 构建命令 =============
-CMD="CUDA_VISIBLE_DEVICES=$GPU_ID python tools/train.py $CONFIG"
+CMD="CUDA_VISIBLE_DEVICES=$GPU_ID python tools/test.py $CONFIG $CHECKPOINT"
 
 if [ ! -z "$WORK_DIR" ]; then
     CMD="$CMD --work-dir $WORK_DIR"
 fi
 
-if [ "$USE_AMP" = "y" ]; then
-    CMD="$CMD --amp"
+if [ ! -z "$SHOW_DIR" ]; then
+    CMD="$CMD --show-dir $SHOW_DIR"
 fi
 
-if [ "$RESUME" = "y" ]; then
-    CMD="$CMD --resume"
+if [ ! -z "$OUT_FILE" ]; then
+    CMD="$CMD --out $OUT_FILE"
 fi
 
 if [ ! -z "$CFG_OPTIONS" ]; then
@@ -168,8 +210,8 @@ if [ "$CONFIRM" != "y" ]; then
 fi
 
 echo ""
-echo -e "${GREEN}开始训练...${NC}"
+echo -e "${GREEN}开始测试...${NC}"
 echo ""
 
-# 执行训练
+# 执行测试
 eval $CMD
